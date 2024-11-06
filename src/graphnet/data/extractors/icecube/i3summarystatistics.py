@@ -55,6 +55,8 @@ class I3SummaryStatistics(I3FeatureExtractor):
             "charge": [],
             "time_first": [],
             "time_last": [],
+            "charge_weighted_mean_time": [],
+            "charge_weighted_std_time": [],
             "dom_x": [],
             "dom_y": [],
             "dom_z": [],
@@ -168,16 +170,19 @@ class I3SummaryStatistics(I3FeatureExtractor):
             total_dom_charge = sum(dom_charges[om_key])
             rel_times = dom_times[om_key] - global_charge_wgt_mean_time
 
-            charge_weighted_mean_time = np.average(
+            charge_weighted_mean_rel_time = np.average(
                 rel_times, weights=dom_charges[om_key]
             )
-            charge_weighted_std_time = weighted_std(
+            charge_weighted_std_rel_time = weighted_std(
                 rel_times, weights=dom_charges[om_key]
             )
 
             output["charge"].append(total_dom_charge)
             output["time_first"].append(rel_times[0])
             output["time_last"].append(rel_times[-1])
+            
+            output["charge_weighted_mean_time"].append(charge_weighted_mean_rel_time)
+            output["charge_weighted_std_time"].append(charge_weighted_std_rel_time)
 
             for time_quantile in self._time_quantiles:
                 output[f"time_{time_quantile}"].append(
