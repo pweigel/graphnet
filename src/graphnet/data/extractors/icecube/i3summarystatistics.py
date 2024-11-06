@@ -180,9 +180,13 @@ class I3SummaryStatistics(I3FeatureExtractor):
             output["charge"].append(total_dom_charge)
             output["time_first"].append(rel_times[0])
             output["time_last"].append(rel_times[-1])
-            
-            output["charge_weighted_mean_time"].append(charge_weighted_mean_rel_time)
-            output["charge_weighted_std_time"].append(charge_weighted_std_rel_time)
+
+            output["charge_weighted_mean_time"].append(
+                charge_weighted_mean_rel_time
+            )
+            output["charge_weighted_std_time"].append(
+                charge_weighted_std_rel_time
+            )
 
             for time_quantile in self._time_quantiles:
                 output[f"time_{time_quantile}"].append(
