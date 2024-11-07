@@ -86,6 +86,7 @@ class Model(
         source: Union[ModelConfig, str],
         trust: bool = False,
         load_modules: Optional[List[str]] = None,
+        extra_classes: Optional[Dict[str, Any]] = None,
     ) -> "Model":
         """Construct `Model` instance from `source` configuration.
 
@@ -107,7 +108,7 @@ class Model(
             source, ModelConfig
         ), f"Argument `source` of type ({type(source)}) is not a `ModelConfig"
 
-        return source._construct_model(trust, load_modules)
+        return source._construct_model(trust, load_modules, extra_classes)
 
     def set_verbose_print_recursively(self, verbose_print: bool) -> None:
         """Set verbose_print recursively for all Model modules."""

@@ -37,6 +37,9 @@ class I3InferenceModule(DeploymentModule):
         features: Optional[List[str]] = None,
         prediction_columns: Optional[Union[List[str], None]] = None,
         pulsemap: Optional[str] = None,
+        load_modules: Optional[List[str]] = None,
+        extra_classes: Optional[Dict[str, Any]] = None,
+        device: Optional[str] = "cpu",
     ):
         """General class for inference on I3Frames (physics).
 
@@ -53,11 +56,17 @@ class I3InferenceModule(DeploymentModule):
                                Will help define the named entry in the I3Frame.
                                 E.g. ['energy_reco']. Optional.
             pulsemap: the pulsmap that the model is expecting as input.
+            load_modules: Additional modules to include for model loading.
+            extra_classes: Additional classes to include for model loading.
+            device: The computational device to use. Defaults to "cpu".
         """
         super().__init__(
             model_config=model_config,
             state_dict=state_dict,
             prediction_columns=prediction_columns,
+            load_modules=load_modules,
+            extra_classes=extra_classes,
+            device=device,
         )
         # Checks
         assert isinstance(gcd_file, str), "gcd_file must be string"
@@ -82,7 +91,7 @@ class I3InferenceModule(DeploymentModule):
     def __call__(self, frame: I3Frame) -> bool:
         """Write predictions from model to frame."""
         # inference
-        data = self._create_data_representation(frame=frame)
+        data = self._create_data_representation(frame=frame).to(self._device)
         predictions = self._apply_model(data=data)
 
         # Check dimensions of predictions and prediction columns
@@ -134,12 +143,13 @@ class I3InferenceModule(DeploymentModule):
         if data is not None:
             predictions = self._inference(data)
             if isinstance(predictions, list):
+                if len(predictions) > 1:
+                    self.warning(
+                        f"{self.__class__.__name__} assumes one Task "
+                        f"but got {len(predictions)}. Only the first will"
+                        " be used."
+                    )
                 predictions = predictions[0]
-                self.warning(
-                    f"{self.__class__.__name__} assumes one Task "
-                    f"but got {len(predictions)}. Only the first will"
-                    " be used."
-                )
         else:
             self.warning(
                 "At least one event has no pulses "

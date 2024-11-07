@@ -62,3 +62,17 @@ def requires_icecube(test_function: Callable) -> Callable:
             return
 
     return wrapper
+
+
+def has_multiprocess() -> bool:
+    """Check if the `multiprocess` package is available."""
+    try:
+        import multiprocess  # pyright: reportMissingImports=false
+
+        return True
+    except ImportError:
+        Logger(log_folder=None).warning_once(
+            "`multiprocess` not available. Using default python"
+            "`multiprocessing` package."
+        )
+        return False

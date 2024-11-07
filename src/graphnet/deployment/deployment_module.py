@@ -1,7 +1,7 @@
 """Class(es) for deploying GraphNeT models in icetray as I3Modules."""
 
 from abc import abstractmethod
-from typing import Any, List, Union, Dict
+from typing import Any, List, Union, Dict, Optional
 
 import numpy as np
 from torch import Tensor, load
@@ -24,8 +24,10 @@ class DeploymentModule(Logger):
         self,
         model_config: Union[ModelConfig, str],
         state_dict: Union[Dict[str, Tensor], str],
-        device: str = "cpu",
+        device: Optional[str] = "cpu",
         prediction_columns: Union[List[str], None] = None,
+        load_modules: Optional[List[str]] = None,
+        extra_classes: Optional[Dict[str, Any]] = None,
     ):
         """Construct DeploymentModule.
 
@@ -34,22 +36,29 @@ class DeploymentModule(Logger):
             state_dict: A state dict for the model.
             device: The computational device to use. Defaults to "cpu".
             prediction_columns: Column names for each column in model output.
+            load_modules: Additional modules to include for model loading.
+            extra_classes: Additional classes to include for model loading.
         """
         super().__init__(name=__name__, class_name=self.__class__.__name__)
         # Set Member Variables
         self.model = self._load_model(
-            model_config=model_config, state_dict=state_dict
+            model_config=model_config,
+            state_dict=state_dict,
+            load_modules=load_modules,
+            extra_classes=extra_classes,
         )
 
         self.prediction_columns = self._resolve_prediction_columns(
             prediction_columns
         )
 
+        self._device = device
+
         # Set model to inference mode.
         self.model.inference()
 
         # Move model to device
-        self.model.to(device)
+        self.model.to(self._device)
 
     @abstractmethod
     def __call__(self, input_data: Any) -> Any:
@@ -59,9 +68,16 @@ class DeploymentModule(Logger):
         self,
         model_config: Union[ModelConfig, str],
         state_dict: Union[Dict[str, Tensor], str],
+        load_modules: Optional[List[str]] = None,
+        extra_classes: Optional[Dict[str, Any]] = None,
     ) -> Model:
         """Load `Model` from config and insert learned weights."""
-        model = Model.from_config(model_config, trust=True)
+        model = Model.from_config(
+            model_config,
+            trust=True,
+            load_modules=load_modules,
+            extra_classes=extra_classes,
+        )
         if isinstance(state_dict, str) and state_dict.endswith(".ckpt"):
             ckpt = load(state_dict)
             model.load_state_dict(ckpt["state_dict"])
@@ -97,5 +113,5 @@ class DeploymentModule(Logger):
         output = self.model(data=data)
         # Loop over tasks in model and transform to numpy
         for k in range(len(output)):
-            output[k] = output[k].detach().numpy()
+            output[k] = output[k].detach().cpu().numpy()
         return output

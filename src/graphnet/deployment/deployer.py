@@ -2,16 +2,20 @@
 
 import random
 from abc import abstractmethod, ABC
-import multiprocessing
 from typing import TYPE_CHECKING, List, Union, Sequence, Any
 import time
 
-from graphnet.utilities.imports import has_torch_package
+from graphnet.utilities.imports import has_torch_package, has_multiprocess
 from .deployment_module import DeploymentModule
 from graphnet.utilities.logging import Logger
 
 if has_torch_package() or TYPE_CHECKING:
     import torch
+
+if has_multiprocess():
+    import multiprocess as mp
+else:
+    import multiprocessing as mp
 
 
 class Deployer(ABC, Logger):
@@ -84,7 +88,7 @@ class Deployer(ABC, Logger):
             processes = []
             for i in range(self._n_workers):
                 processes.append(
-                    multiprocessing.Process(
+                    mp.Process(
                         target=self._process_files,
                         args=[settings[i]],  # type: ignore
                     )

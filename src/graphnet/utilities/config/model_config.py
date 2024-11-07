@@ -102,6 +102,7 @@ class ModelConfig(BaseConfig):
         self,
         trust: bool = False,
         load_modules: Optional[List[str]] = None,
+        extra_classes: Optional[Dict[str, Any]] = None,
     ) -> "Model":
         """Construct `Model` instance from `self` configuration.
 
@@ -114,7 +115,7 @@ class ModelConfig(BaseConfig):
 
         # Load any additional modules into the global namespace
         for module in load_modules:
-            assert re.match("^[a-zA-Z_]+$", module) is not None
+            # assert re.match("^[a-zA-Z_]+$", module) is not None
             if module in globals():
                 continue
             exec(f"import {module}", globals())
@@ -128,23 +129,35 @@ class ModelConfig(BaseConfig):
             graphnet.data, graphnet.models, graphnet.training
         )
 
+        if extra_classes is not None:
+            namespace_classes.update(extra_classes)
+
         # Parse potential ModelConfig arguments
         arguments = dict(**self.arguments)
         arguments = traverse_and_apply(
             arguments,
             self._deserialise,
-            fn_kwargs={"trust": trust},
+            fn_kwargs={
+                "trust": trust,
+                "load_modules": load_modules,
+                "extra_classes": extra_classes,
+            },
         )
 
         # Construct model based on arguments
         return namespace_classes[self.class_name](**arguments)
 
     @classmethod
-    def _deserialise(cls, obj: Any, trust: bool = False) -> Any:
+    def _deserialise(
+        cls,
+        obj: Any,
+        trust: bool = False,
+        **kwargs: Any,
+    ) -> Any:
         if isinstance(obj, ModelConfig):
             from graphnet.models import Model
 
-            return Model.from_config(obj, trust=trust)
+            return Model.from_config(obj, **kwargs)
 
         elif isinstance(obj, str) and obj.startswith("!lambda"):
             if trust:
