@@ -4,6 +4,7 @@ from abc import abstractmethod
 from typing import Any, List, Union, Dict, Optional
 
 import numpy as np
+import torch
 from torch import Tensor, load
 from torch_geometric.data import Data, Batch
 
@@ -110,7 +111,9 @@ class DeploymentModule(Logger):
             `Task`s that the model contains.
         """
         # Perform inference
-        output = self.model(data=data)
+        with torch.inference_mode():
+            output = self.model(data=data)
+
         # Loop over tasks in model and transform to numpy
         for k in range(len(output)):
             output[k] = output[k].detach().cpu().numpy()
