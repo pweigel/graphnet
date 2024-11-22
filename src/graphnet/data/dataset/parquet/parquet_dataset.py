@@ -126,6 +126,7 @@ class ParquetDataset(Dataset):
         self._cache_size = cache_size
         self._chunk_sizes = self._calculate_sizes()
         self._chunk_cumsum = np.cumsum(self._chunk_sizes)
+        self._active_loading = []
         self._file_cache = self._initialize_file_cache(
             truth_table=truth_table,
             node_truth_table=node_truth_table,
@@ -297,7 +298,11 @@ class ParquetDataset(Dataset):
 
     def _load_table(self, table_name: str, file_idx: int) -> None:
         """Load and possibly cache a parquet table."""
-        if file_idx not in self._file_cache[table_name].keys():
+        if (file_idx not in self._file_cache[table_name].keys()) and \
+            (file_idx not in self._active_loading):
+            self._active_loading.append(file_idx)
+            # print(torch.utils.data.get_worker_info(), file_idx, self._active_loading, self._file_cache[table_name].keys())
+
             file_path = os.path.join(
                 self._path, table_name, f"{table_name}_{file_idx}.parquet"
             )
@@ -323,6 +328,7 @@ class ParquetDataset(Dataset):
                 del self._file_cache[table_name][
                     list(self._file_cache[table_name].keys())[0]
                 ]
+            self._active_loading.remove(file_idx)
 
     def _raise_column_exception(
         self, df_columns: List[str], columns: Union[List[str], str], table: str
@@ -335,6 +341,8 @@ class ParquetDataset(Dataset):
 
     def __getitem__(self, sequential_index: int) -> Data:
         """Return graph `Data` object at `index`."""
+        # worker_info = torch.utils.data.get_worker_info()
+        # print("loading idx {} from worker {}".format(sequential_index, worker_info.id))
         if not (0 <= sequential_index < len(self)):
             raise IndexError(
                 f"Index {sequential_index} not in range [0, {len(self) - 1}]"

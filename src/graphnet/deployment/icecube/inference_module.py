@@ -83,6 +83,8 @@ class I3InferenceModule(DeploymentModule):
         self._gcd_file = gcd_file
         self.model_name = model_name
         self._features = features
+        
+        self._frame_buffer = []
 
         # Set GCD file for pulsemap extractor
         for i3_extractor in self._i3_extractors:
@@ -103,7 +105,10 @@ class I3InferenceModule(DeploymentModule):
         # Submit Dictionary to frame
         frame = self._add_to_frame(frame=frame, data=data)
         return True
-
+    
+    def _process_buffer(self):
+        pass
+    
     def _check_dimensions(self, predictions: np.ndarray) -> int:
         if len(predictions.shape) > 1:
             dim = predictions.shape[1]

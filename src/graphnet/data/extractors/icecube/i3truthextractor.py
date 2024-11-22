@@ -568,3 +568,73 @@ class I3TruthExtractor(I3Extractor):
             [truth["position_x"], truth["position_y"], truth["position_z"]]
         )
         return self.delaunay.find_simplex(vertex) >= 0
+    
+    def _containment_variables(self, truth: Dict[str, Any]):
+        """Determine if an event is starting based on vertex position.
+
+        Args:
+            truth: Dictionary of already extracted truth-level information.
+
+        Returns:
+            Tuple containing information about the containment of the event,
+            length inside the detector entry, and exit points.
+        """
+        vertex = np.array(
+            [truth["position_x"], truth["position_y"], truth["position_z"]]
+        )
+        
+        dir_vec = -1 * np.array(
+            [
+                np.cos(truth["azimuth"])
+                * np.sin(truth["zenith"]),
+                np.sin(truth["azimuth"])
+                * np.sin(truth["zenith"]),
+                np.cos(truth["zenith"]),
+            ]
+        )
+
+        entry_t = np.inf
+        exit_t = -np.inf
+        
+        entry_point = None
+        exit_point = None
+        
+        # First method
+        # for equation in self.hull.equations: # Planar equation: Ax + By + Cz + D = 0
+        #     normal = equation[:-1]
+        #     D = equation[-1]
+            
+        #     denominator = np.dot(normal, dir_vec)
+        #     if abs(denominator) > 1e-10:  # ensure non-parallel ray to facet
+        #         t = -(np.dot(normal, vertex) + D) / denominator
+                
+        #         if t > 0:  # intersections in forward direction
+        #             entry_t = min(entry_t, t)
+        #             exit_t = max(exit_t, t)
+        
+        # A second method using vectorization
+        normals = self.hull.equations[:, :-1]
+        Ds = self.hull.equations[:, -1]
+        denominators = normals.dot(dir_vec)
+        
+        not_parallel = np.abs(denominators) > 1e-10
+        ts = -(normals.dot(vertex) + Ds) / denominators
+        ts_positives = ts[(ts > 0) & not_parallel]
+        
+        if ts_positives.size > 0:
+            entry_t = ts_positives[np.argmin(ts_positives)]
+            exit_t = ts_positives[np.argmax(ts_positives)]        
+        
+        is_starting = False  
+        distance_in_hull = 0.0
+        if entry_t < exit_t:  # excludes events that happen AFTER the detector
+            entry_point = vertex + entry_t * dir_vec
+            exit_point = vertex + exit_t * dir_vec
+            
+            if self.delaunay.find_simplex(vertex) >= 0:
+                is_starting = True  # Starting
+                distance_in_hull = np.linalg.norm(exit_point - vertex)
+            else: # Entering/throughgoing
+                distance_in_hull = np.linalg.norm(exit_point - entry_point)
+                
+        return is_starting, distance_in_hull, entry_point, exit_point
