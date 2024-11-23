@@ -112,15 +112,15 @@ class I3BatchInferenceModule(I3Module, DeploymentModule):
         self._data_buffer = []
         self._pframe_counter = 0
         
-        self._timer = None
+        self._start_time = None
         
         # Set GCD file for pulsemap extractor
         for i3_extractor in self._i3_extractors:
             i3_extractor.set_gcd(i3_file="", gcd_file=self._gcd_file)
 
     def Process(self):
-        if self._timer is None:
-            self._timer = time.time()
+        if self._start_time is None:
+            self._start_time = time.time()
             
         frame = self.PopFrame()
         
@@ -135,17 +135,17 @@ class I3BatchInferenceModule(I3Module, DeploymentModule):
             
         if self._pframe_counter == self._batch_size:
             self._process_buffer()
-            self.info("Batch took {:.2f} seconds".format(time.time() - self._timer)) 
-            self._timer = time.time()
+            # self.info("Batch took {:.2f} seconds".format(time.time() - self._timer)) 
+            # self._timer = time.time()
         
     def _process_buffer(self):
         batch = Batch.from_data_list(self._data_buffer).to(self._device)
         self._data_buffer = []  # Reset data buffer
         
         # (batch_size, num_predictions)
-        gpu_time = time.time() 
+        # gpu_time = time.time() 
         predictions = self._apply_model(data=batch)
-        self.info("GPU prediction took {:.2f} seconds".format(time.time() - gpu_time))
+        # self.info("GPU prediction took {:.2f} seconds".format(time.time() - gpu_time))
               
         # Check dimensions of predictions and prediction columns
         dim = self._check_dimensions(predictions=predictions)
@@ -167,6 +167,7 @@ class I3BatchInferenceModule(I3Module, DeploymentModule):
     def Finish(self):
         if len(self._frame_buffer) > 0:
             self._process_buffer()
+        self.info("File took {:.2f} seconds.".format(time.time()-self._start_time))
 
     
     def _check_dimensions(self, predictions: np.ndarray) -> int:

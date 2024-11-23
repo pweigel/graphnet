@@ -71,7 +71,6 @@ class I3Deployer(Deployer):
                 tray.AddModule(i3_module)
             
             if self._inference_module is not None and self._deployment_kwargs is not None:
-                print(self._deployment_kwargs)
                 tray.AddModule(self._inference_module, 'asdf', **self._deployment_kwargs)
                 
             tray.Add(
