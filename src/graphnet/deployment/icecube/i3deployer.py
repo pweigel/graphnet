@@ -1,6 +1,6 @@
 """Contains an IceCube-specific implementation of Deployer."""
 
-from typing import TYPE_CHECKING, List, Union, Sequence
+from typing import TYPE_CHECKING, List, Union, Sequence, Optional, Dict, Any
 import os
 import numpy as np
 
@@ -11,7 +11,7 @@ from graphnet.deployment import Deployer
 
 if has_icecube_package() or TYPE_CHECKING:
     from icecube import icetray, dataio  # pyright: reportMissingImports=false
-    from I3Tray import I3Tray
+    from icecube.icetray import I3Tray
 
 
 class I3Deployer(Deployer):
@@ -25,6 +25,8 @@ class I3Deployer(Deployer):
         modules: Union[I3InferenceModule, Sequence[I3InferenceModule]],
         gcd_file: str,
         n_workers: int = 1,
+        inference_module: Optional[I3InferenceModule] = None,
+        deployment_kwargs: Optional[Dict[Any, Any]] = None,
     ) -> None:
         """Initialize `Deployer`.
 
@@ -43,6 +45,8 @@ class I3Deployer(Deployer):
 
         # Member variables
         self._gcd_file = gcd_file
+        self._inference_module = inference_module
+        self._deployment_kwargs = deployment_kwargs
 
     def _process_files(
         self,
@@ -65,6 +69,11 @@ class I3Deployer(Deployer):
             )
             for i3_module in settings.modules:
                 tray.AddModule(i3_module)
+            
+            if self._inference_module is not None and self._deployment_kwargs is not None:
+                print(self._deployment_kwargs)
+                tray.AddModule(self._inference_module, 'asdf', **self._deployment_kwargs)
+                
             tray.Add(
                 "I3Writer",
                 Streams=[
