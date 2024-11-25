@@ -19,6 +19,7 @@ if has_icecube_package() or TYPE_CHECKING:
         phys_services,
         dataio,
         LeptonInjector,
+        MuonGun,
     )  # pyright: reportMissingImports=false
 
 
@@ -164,6 +165,12 @@ class I3TruthExtractor(I3Extractor):
             "L6_oscNext_bool": padding_value,
             "L7_oscNext_bool": padding_value,
             "is_starting": padding_value,
+            "chord_length": padding_value,
+            "visible_hadronic_energy": padding_value,
+            "visible_energy": padding_value,
+            "visible_inelasticity": padding_value,
+            "deposited_track_energy": padding_value,
+            "deposited_inelasticity": padding_value,
         }
 
         # Only InIceSplit P frames contain ML appropriate
@@ -265,23 +272,69 @@ class I3TruthExtractor(I3Extractor):
                 muon_final = self._muon_stopped(output, self._borders)
                 output.update(
                     {
-                        "position_x": muon_final["x"],
+                        # "position_x": muon_final["x"],
                         # position_xyz has no meaning for muons.
                         # These will now be updated to muon final position,
                         # given track length/azimuth/zenith
-                        "position_y": muon_final["y"],
-                        "position_z": muon_final["z"],
+                        # "position_y": muon_final["y"],
+                        # "position_z": muon_final["z"],
                         "stopped_muon": muon_final["stopped"],
                     }
                 )
 
+            vertex = np.array(
+                [output["position_x"], output["position_y"], output["position_z"]]
+            )
+
+            direction_vec = -1 * np.array(
+                [
+                    np.cos(output["azimuth"]) * np.sin(output["zenith"]),
+                    np.sin(output["azimuth"]) * np.sin(output["zenith"]),
+                    np.cos(output["zenith"]),
+                ]
+            )
+        
             is_starting = self._contained_vertex(output)
             output.update(
                 {
                     "is_starting": is_starting,
                 }
             )
-
+            visible_hadronic_energy, visible_energy = self._visible_energy(output)
+            
+            if is_starting:
+                visible_inelasticity = visible_hadronic_energy / visible_energy
+            else:
+                visible_inelasticity = padding_value
+                
+            output.update(
+                {
+                    "visible_hadronic_energy": visible_hadronic_energy,
+                    "visible_energy": visible_energy,
+                    "visible_inelasticity": visible_inelasticity,
+                }
+            )
+            
+            intersections = self._get_intersections(vertex, direction_vec, output)
+            chord_length = self._chord_length(vertex, intersections)
+            output.update(
+                {
+                    "chord_length": chord_length,
+                }
+            )
+            deposited_track_energy = self._deposited_track_energy(frame)
+            
+            if is_starting:
+                deposited_inelasticity = visible_hadronic_energy/(deposited_track_energy + visible_hadronic_energy)
+            else:
+                deposited_inelasticity = padding_value
+            
+            output.update(
+                {
+                    "deposited_track_energy": deposited_track_energy,
+                    "deposited_inelasticity": deposited_inelasticity,
+                }
+            )
         return output
 
     def _extract_dbang_decay_length(
@@ -536,3 +589,127 @@ class I3TruthExtractor(I3Extractor):
             [truth["position_x"], truth["position_y"], truth["position_z"]]
         )
         return self.delaunay.find_simplex(vertex) >= 0
+
+    def _get_intersections(self, vertex, direction_vec, truth: Dict[str, Any]) -> float:
+        """Get the length projected forward from the interaction point that
+        is contained within the detector.
+        
+        """
+        intersections = []
+        
+        # We will find intersections of the direction vec w/ the geometry
+        # If there are two intersections, the vertex is (most likely) outside
+        # and we compute the chord length from the difference of the two intersections
+        # If there is only one intersection, the vertex is inside the geometry
+        # and we take the difference between that intersection and the vertex.
+        for simplex in self.hull.simplices:
+            plane = self.hull.points[simplex]
+            u, v = plane[1] - plane[0], plane[2] - plane[0]  # Basis vectors
+            plane_normal = np.cross(u, v)
+            d = np.dot(plane_normal, direction_vec)
+            if np.abs(d) < 1e-9: # Assume parallel if dot product is very small
+                continue
+            t = np.dot(plane_normal, plane[0] - vertex) / d
+            if t < 0:  # If the intersection occurs behind the vertex, ignore it
+                continue
+            intersection = vertex + t * direction_vec
+            intersections.append(intersection)
+            if len(intersections) == 2: break  # Break early if we found the intersections
+            
+        return intersections
+        
+    def _chord_length(self, vertex, intersections):
+        if len(intersections) == 1:
+            return np.linalg.norm(intersections[0]-vertex)
+        elif len(intersections) == 2:
+            return np.linalg.norm(intersections[0]-intersections[1])
+        elif len(intersections) > 2:
+            assert RuntimeError("Found >2 intersections in this event, this should not be possible!")
+        else:  # If there are no intersections, the chord length is zero.
+            return 0
+            
+    def _visible_energy(self, truth: Dict[str, Any]) -> float:
+        """Calculate the visible energy deposited."""
+        # TODO: Assuming generic hadrons object, this should be improved on -PW
+        # We have to make some simplifications:
+        # 1. In CC interactions, all of the lepton energy is visible
+        # 2. If the vertex is outside of the detector geometry, the hadronic
+        #    energy is not visible, but muon visible energy can be if it intersects
+        #    the detector.
+        # 3. If the muon contributes to the visible energy, it contributes all
+        #    of its energy (since we cannot extract energy losses yet).
+        
+        assert abs(truth["pid"]) in [12, 14, 16], \
+            "'_visible_energy' currently only supports neutrino interactions!"
+    
+        hadronic_energy = truth["energy"]*(1-truth["elasticity"])
+        lepton_energy = truth['elasticity']*truth["energy"]
+        
+        visible_energy = 0
+        visible_hadronic_energy = 0
+        
+        if truth['is_starting']:
+            E0, m, f0 = 0.18791678, 0.16267529, 0.30974123
+            _e = max(2.71828183, hadronic_energy)
+            em_scale = 1.0 - np.power(_e/E0, -m) * (1.0 - f0) # EM scaling factor
+            visible_hadronic_energy = em_scale * hadronic_energy
+            
+            # Starting events always contribute their hadronic energy
+            visible_energy += visible_hadronic_energy
+            if truth['interaction_type'] == 1: # CC
+                visible_energy += lepton_energy
+        else:
+            # If it's not starting, only add muon energy if numu interaction
+            if abs(truth["pid"]) == 14: visible_energy += lepton_energy
+        
+        assert visible_energy - (lepton_energy + hadronic_energy) < 1e-3, \
+            "Visible energy was larger than individual energies."
+        
+        return visible_hadronic_energy, visible_energy
+    
+    def _deposited_track_energy(self, frame: "icetray.I3Frame") -> float:
+        """asdf"""
+        if not frame.Has("MMCTrackList"): return 0
+        
+        # Following a similar procedure as used in ic3-labels:
+        # https://github.com/icecube/ic3-labels/blob/master/ic3_labels/labels/utils/general.py
+        primaries = frame[self._mctree].primaries
+        
+        if len(primaries) == 1:
+            idx = 0
+        elif "CorsikaWeightMap" in frame:
+            wmap = frame["CorsikaWeightMap"]
+
+            if "PrimaryEnergy" in wmap:
+                prim_e = wmap["PrimaryEnergy"]
+                idx = int(
+                    np.nanargmin([abs(p.energy - prim_e) for p in primaries])
+                )
+            elif "PrimarySpectralIndex" in wmap:
+                prim_e = wmap["Weight"] ** (-1.0 / wmap["PrimarySpectralIndex"])
+                idx = int(
+                    np.nanargmin([abs(p.energy - prim_e) for p in primaries])
+                )
+            else:
+                idx = 0
+        elif ("I3MCWeightDict" in frame) or ("EventProperties" in frame):
+            idx = [i for i in range(len(primaries)) if primaries[i].is_neutrino]
+            assert len(idx) == 1, (idx, primaries)
+            idx = idx[0]
+        
+        primary = primaries[idx]
+        # If we only intersect once (starting event) then use the vertex as the starting position        
+        # if len(intersections) == 1:
+        #     intersections = [vertex, intersections[0]]
+        
+        # TODO: filter out coincident muons
+        # This also assumes whatever the generation detector geometry is for Elost?
+        deposited_energy = 0
+        for track in frame["MMCTrackList"]:
+            
+            # e0, e1 = track.get_energy(intersections[0]), track.get_energy(intersections[1])
+            # edep += abs(e0 - e1)
+            if track.particle.major_id == primary.major_id:
+                deposited_energy += track.Elost
+
+        return deposited_energy

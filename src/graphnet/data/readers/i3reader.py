@@ -61,6 +61,8 @@ class I3Reader(GraphNeTFileReader):
         self._i3filters = (
             i3_filters if isinstance(i3_filters, list) else [i3_filters]
         )
+        
+        self._event_ids = []
 
         # Base class constructor
         super().__init__(name=__name__, class_name=self.__class__.__name__)
@@ -95,6 +97,19 @@ class I3Reader(GraphNeTFileReader):
             # check if frame should be skipped
             if self._skip_frame(frame):
                 continue
+
+            # Check if this event id has already been processed, which can
+            # happen if two P frames originate from the same Q frame, meaning
+            # the event was split. There is no easy way to figure out which one
+            # corresponds to the true event, so we will remove both.
+            event_id = frame['I3EventHeader'].event_id
+            if event_id in self._event_ids:
+                self.warning_once("Two events from the same Q frame were found. These will be"
+                                  "removed from the output stream.")
+                data = data[:-1]  # Also remove the previous subevent
+                continue
+
+            self._event_ids.append(event_id)
 
             # Try to extract data from I3Frame
             results = [extractor(frame) for extractor in self._extractors]

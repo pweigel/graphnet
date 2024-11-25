@@ -278,7 +278,7 @@ class DataConverter(ABC, Logger):
         if n_workers > 1:
             self.info(
                 f"Starting pool of {n_workers} workers to process"
-                " {nb_files} {unit}"
+                f" {nb_files} {unit}"
             )
 
             manager = Manager()
