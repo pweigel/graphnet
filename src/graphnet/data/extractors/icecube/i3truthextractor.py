@@ -107,10 +107,15 @@ class I3TruthExtractor(I3Extractor):
         # Modifications specific to I3TruthExtractor
         # These modifications are needed to identify starting events
         coordinates = []
-        for _, g in self._gcd_dict.items():
-            if g.position.z > 1200:
-                continue  # We want to exclude icetop
-            coordinates.append([g.position.x, g.position.y, g.position.z])
+        # for _, g in self._gcd_dict.items():
+        #     if g.position.z > 1200:
+        #         continue  # We want to exclude icetop
+        #     coordinates.append([g.position.x, g.position.y, g.position.z])
+        # coordinates = np.array(coordinates)
+
+        for xy in self._borders[0]:
+            for z in self._borders[1]:
+                coordinates.append([xy[0], xy[1], z])
         coordinates = np.array(coordinates)
 
         if self._extend_boundary != 0.0:
@@ -121,7 +126,8 @@ class I3TruthExtractor(I3Extractor):
             coordinates = coordinates + dn * self._extend_boundary
 
         hull = ConvexHull(coordinates)
-
+        
+        self.centroid = np.mean(coordinates, axis=0)
         self.hull = hull
         self.delaunay = Delaunay(coordinates[self.hull.vertices])
 
@@ -228,6 +234,23 @@ class I3TruthExtractor(I3Extractor):
                 frame, sim_type
             )
 
+            # In the case of NuGen, the neutrino is created very far away, and we need
+            # to get the vertex position from the daughters.
+            if frame.Has('I3MCWeightDict'):
+                daughters = frame[self._mctree].get_daughters(MCInIcePrimary)
+                assert len(daughters) > 0, "Found no daughters of MCInIcePrimary!"
+                vertex = np.array(
+                    [daughters[0].pos.x, 
+                     daughters[0].pos.y, 
+                     daughters[0].pos.z]
+                )
+            else:
+                vertex = np.array(
+                    [MCInIcePrimary.pos.x, 
+                     MCInIcePrimary.pos.y, 
+                     MCInIcePrimary.pos.z]
+                )
+
             try:
                 (
                     energy_track,
@@ -247,9 +270,9 @@ class I3TruthExtractor(I3Extractor):
             output.update(
                 {
                     "energy": MCInIcePrimary.energy,
-                    "position_x": MCInIcePrimary.pos.x,
-                    "position_y": MCInIcePrimary.pos.y,
-                    "position_z": MCInIcePrimary.pos.z,
+                    "position_x": vertex[0],
+                    "position_y": vertex[1],
+                    "position_z": vertex[2],
                     "azimuth": MCInIcePrimary.dir.azimuth,
                     "zenith": MCInIcePrimary.dir.zenith,
                     "pid": MCInIcePrimary.pdg_encoding,
@@ -281,10 +304,6 @@ class I3TruthExtractor(I3Extractor):
                         "stopped_muon": muon_final["stopped"],
                     }
                 )
-
-            vertex = np.array(
-                [output["position_x"], output["position_y"], output["position_z"]]
-            )
 
             direction_vec = -1 * np.array(
                 [
@@ -326,6 +345,7 @@ class I3TruthExtractor(I3Extractor):
             
             if is_starting:
                 deposited_inelasticity = visible_hadronic_energy/(deposited_track_energy + visible_hadronic_energy)
+                # print(chord_length, intersections, vertex, direction_vec)
             else:
                 deposited_inelasticity = padding_value
             
@@ -595,28 +615,48 @@ class I3TruthExtractor(I3Extractor):
         is contained within the detector.
         
         """
-        intersections = []
+        intersections = set()
         
         # We will find intersections of the direction vec w/ the geometry
         # If there are two intersections, the vertex is (most likely) outside
         # and we compute the chord length from the difference of the two intersections
         # If there is only one intersection, the vertex is inside the geometry
         # and we take the difference between that intersection and the vertex.
-        for simplex in self.hull.simplices:
+        for i, simplex in enumerate(self.hull.simplices):
+                
             plane = self.hull.points[simplex]
-            u, v = plane[1] - plane[0], plane[2] - plane[0]  # Basis vectors
+            u, v = plane[1] - plane[0], plane[2] - plane[0]
             plane_normal = np.cross(u, v)
+
             d = np.dot(plane_normal, direction_vec)
-            if np.abs(d) < 1e-9: # Assume parallel if dot product is very small
+            if np.abs(d) < 1e-8: # Assume parallel if dot product is very small
                 continue
             t = np.dot(plane_normal, plane[0] - vertex) / d
             if t < 0:  # If the intersection occurs behind the vertex, ignore it
                 continue
             intersection = vertex + t * direction_vec
-            intersections.append(intersection)
-            if len(intersections) == 2: break  # Break early if we found the intersections
             
-        return intersections
+            vec0 = plane[1] - plane[0]
+            vec1 = plane[2] - plane[0]
+            vec2 = intersection - plane[0]
+            
+            dot00 = np.dot(vec0, vec0)
+            dot01 = np.dot(vec0, vec1)
+            dot02 = np.dot(vec0, vec2)
+            dot11 = np.dot(vec1, vec1)
+            dot12 = np.dot(vec1, vec2)
+            
+            inv_denom = 1 / (dot00 * dot11 - dot01 * dot01)
+            u = (dot11 * dot02 - dot01 * dot12) * inv_denom
+            v = (dot00 * dot12 - dot01 * dot02) * inv_denom
+            
+            if (u >= 0) and (v >= 0) and (u + v <= 1):        
+                intersection = tuple(np.round(intersection, decimals=6))
+                intersections.add(intersection)
+
+            if len(intersections) == 2: break  # Break early if we found the intersections
+
+        return [np.array(x) for x in intersections]
         
     def _chord_length(self, vertex, intersections):
         if len(intersections) == 1:

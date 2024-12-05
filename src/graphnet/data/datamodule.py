@@ -183,7 +183,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         # Creation of Datasets
         if (
             self._test_selection is not None
-            or len(self._test_dataloader_kwargs) > 0
+            # or len(self._test_dataloader_kwargs) > 0
         ):
             self._test_dataset = self._create_dataset(
                 self._test_selection  # type: ignore

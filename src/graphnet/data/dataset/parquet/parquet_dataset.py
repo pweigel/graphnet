@@ -47,6 +47,7 @@ class ParquetDataset(Dataset):
         seed: Optional[int] = None,
         cache_size: int = 1,
         labels: Optional[Dict[str, Any]] = None,
+        shuffle_filelist: Optional[bool] = False,
     ):
         """Construct Dataset.
 
@@ -134,6 +135,7 @@ class ParquetDataset(Dataset):
         self._string_selection = string_selection
         # Purely internal member variables
         self._missing_variables: Dict[str, List[str]] = {}
+        self._shuffle_filelist = shuffle_filelist
         self._remove_missing_columns()
 
     def _initialize_file_cache(
@@ -252,7 +254,7 @@ class ParquetDataset(Dataset):
             file_idx = [bisect_right(self._chunk_cumsum, sequential_index)]
 
         file_indices = [self._indices[idx] for idx in file_idx]
-
+        # print(file_indices, sequential_index, columns)
         arrays = []
         for file_idx in file_indices:
             array = self._query_table(

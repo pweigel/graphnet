@@ -105,7 +105,7 @@ class I3Reader(GraphNeTFileReader):
             event_id = frame['I3EventHeader'].event_id
             if event_id in self._event_ids:
                 self.warning_once("Two events from the same Q frame were found. These will be"
-                                  "removed from the output stream.")
+                                  " removed from the output stream.")
                 data = data[:-1]  # Also remove the previous subevent
                 continue
 
