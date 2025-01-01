@@ -235,6 +235,7 @@ class LearnedTask(Task):
         self,
         hidden_size: int,
         loss_function: "LossFunction",
+        disable_affine: bool = False,
         **task_kwargs: Any,
     ):
         """Construct `LearnedTask`.
@@ -250,7 +251,10 @@ class LearnedTask(Task):
 
         # Mapping from last hidden layer to required size of input
         self._loss_function = loss_function
-        self._affine = Linear(hidden_size, self.nb_inputs)
+        if not disable_affine:
+            self._affine = Linear(hidden_size, self.nb_inputs)
+        else:
+            self._affine = None
 
     @abstractmethod
     def _forward(  # type: ignore
@@ -281,7 +285,8 @@ class LearnedTask(Task):
         target dimensions.
         """
         self._regularisation_loss = 0  # Reset
-        x = self._affine(x)
+        if self._affine is not None:
+            x = self._affine(x)
         x = self._forward(x=x)
         return self._transform_prediction(x)
 
