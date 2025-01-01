@@ -32,6 +32,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         test_dataloader_kwargs: Optional[Dict[str, Any]] = None,
         train_val_split: Optional[List[float]] = [0.9, 0.10],
         split_seed: int = 42,
+        disable_train_val: bool = False,
     ) -> None:
         """Create dataloaders from dataset.
 
@@ -64,6 +65,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         self._test_selection = test_selection
         self._train_val_split = train_val_split or [0.0]
         self._rng = split_seed
+        self._disable_train_val = disable_train_val
 
         if train_dataloader_kwargs is None:
             train_dataloader_kwargs = {"batch_size": 2, "num_workers": 1}
@@ -193,9 +195,12 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
                 self._train_dataset = self._create_dataset(
                     self._train_selection
                 )
+            else:
+                self._train_dataset = None
             if self._val_selection is not None:
                 self._val_dataset = self._create_dataset(self._val_selection)
-
+            else:
+                self._val_dataset = None
         return
 
     @property
@@ -414,18 +419,22 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         else:  # selection is None
             # If not provided, we infer it by grabbing
             # all event ids in the dataset.
-            self.info(
-                f"{self.__class__.__name__} did not receive an"
-                " for `selection`. Selection will "
-                "will automatically be created with a split of "
-                f"train: {self._train_val_split[0]} and "
-                f"validation: {self._train_val_split[1]}"
-            )
-            (
-                self._train_selection,
-                self._val_selection,
-            ) = self._infer_selections()  # type: ignore
-
+            if not self._disable_train_val:
+                self.info(
+                    f"{self.__class__.__name__} did not receive an"
+                    " for `selection`. Selection will "
+                    "will automatically be created with a split of "
+                    f"train: {self._train_val_split[0]} and "
+                    f"validation: {self._train_val_split[1]}"
+                )
+                (
+                    self._train_selection,
+                    self._val_selection,
+                ) = self._infer_selections()  # type: ignore
+            else:
+                self._train_selection = None
+                self._val_selection = None
+    
     def _split_selection(
         self, selection: Union[int, List[int], List[List[int]]]
     ) -> Tuple[List[int], List[int]]:
@@ -502,12 +511,10 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         tmp_args = deepcopy(self._dataset_args)
         tmp_args["path"] = dataset_path
         tmp_dataset = self._construct_dataset(tmp_args)
-
         all_events = (
             tmp_dataset._get_all_indices()
         )  # unshuffled list, sequential index
 
-        # Multiple lines to avoid one large
         all_events = (
             pd.DataFrame(all_events)
             .sample(frac=1, replace=False, random_state=self._rng)
