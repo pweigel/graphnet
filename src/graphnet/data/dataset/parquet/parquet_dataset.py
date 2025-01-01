@@ -192,7 +192,11 @@ class ParquetDataset(Dataset):
     def _get_all_indices(self) -> List[int]:
         """Return a list of all unique values in `self._index_column`."""
         files = glob(os.path.join(self._path, self._truth_table, "*.parquet"))
-        return np.arange(0, len(files), 1)
+        indices = []
+        for fn in files:
+            df = pol.read_parquet(fn, columns=[self._index_column])
+            indices.extend(df[self._index_column].to_list())
+        return indices
 
     def _calculate_sizes(self) -> List[int]:
         """Calculate the number of events in each chunk."""
