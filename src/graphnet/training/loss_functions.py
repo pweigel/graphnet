@@ -16,6 +16,7 @@ from torch.nn.functional import (
     one_hot,
     binary_cross_entropy,
     softplus,
+    binary_cross_entropy_with_logits,
 )
 
 from graphnet.models.model import Model
@@ -214,6 +215,12 @@ class BinaryCrossEntropyLoss(LossFunction):
             prediction.float(), target.float(), reduction="none"
         )
 
+class BinaryCrossEntropyLogitsLoss(LossFunction):
+    
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        return binary_cross_entropy_with_logits(
+            prediction.float(), target.float(), reduction="none",
+        )
 
 class LogCMK(torch.autograd.Function):
     """MIT License.
